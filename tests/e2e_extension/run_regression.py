@@ -111,6 +111,20 @@ def run_phase(tag, http_url, do_edit_and_contract=True):
             viewport={"width": 1440, "height": 950},
         )
         ctx.set_default_timeout(8000)
+        # 侧栏恢复既有应用 session 的回归夹具：不依赖真实生产账号，也不向线上发送测试 token。
+        ctx.route(
+            "https://pagetack-api.zeabur.app/auth/me",
+            lambda route: route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({
+                    "id": "stored-user",
+                    "name": "Stored User",
+                    "team_id": "stored-team",
+                    "teams": [{"team_id": "stored-team", "name": "Stored Team", "role": "owner"}],
+                }),
+            ),
+        )
         def wire(pg):
             pg.on("pageerror", lambda e: ctx_errors.append(f"pageerror: {e}"))
             pg.on("dialog", lambda d: d.dismiss())
@@ -208,6 +222,33 @@ def run_phase(tag, http_url, do_edit_and_contract=True):
                 if direct.get("ok") is True and direct_draft:
                     sp.locator("#draft-host .draft-cancel").click(force=True)
                 blocked_page.close(); blocked_page = None
+
+            # 用户没有开启 Google 自动登录时，只要现有 PageTack session 仍有效，侧栏也应恢复
+            # 团队身份并显示“复制全站评论给 AI”。此前 early return 会把按钮永久隐藏。
+            sp.evaluate("""async () => new Promise(resolve => {
+                chrome.storage.local.remove(['auto_login_enabled', 'google_auto_login'], () => {
+                    chrome.storage.local.set({
+                        mode: 'synced', session_token: 'stored-session',
+                        user: {id: 'stored-user', name: 'Stored User'},
+                        team_id: 'stored-team', team_name: 'Stored Team'
+                    }, resolve);
+                });
+            })""")
+            page.bring_to_front(); time.sleep(0.2)
+            sp.reload(); sp.wait_for_timeout(1000)
+            restore_state = sp.evaluate("""async () => ({
+                hidden: document.querySelector('#site-export-btn').hidden,
+                activeUrls: (await chrome.tabs.query({active: true, currentWindow: true})).map(t => t.url),
+                account: document.querySelector('#account-flow-host').innerText.slice(0, 60),
+                stored: await chrome.storage.local.get([
+                    'mode', 'session_token', 'user', 'team_id', 'auto_login_enabled'
+                ])
+            })""")
+            report(
+                f"[{tag}] 未开自动登录仍恢复团队并显示整站导出",
+                sp.locator("#site-export-btn").get_attribute("hidden") is None,
+                json.dumps(restore_state, ensure_ascii=False)[:500],
+            )
 
             # --- B/C file:// 注入(用户症状页) ---
             # 模拟已登录团队账号：file:// 仍必须强制走本地评论，不发 RemoteStore/SSE。

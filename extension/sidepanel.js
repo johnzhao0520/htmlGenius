@@ -6,6 +6,7 @@
 
   let isLocal = false;
   let currentTabId = null;
+  let _siteExportSupported = false; // file/data/blob 不支持；localhost 仍是可按 origin 汇总的 HTTP 站点
   let _pendingSelector = null; // 新建批注草稿的 {selector, quote}(来自 content-script)
   let _toastTimer = 0;
   let _lastItems = []; // 上次渲染的批注(供切换语言时重绘)
@@ -23,7 +24,9 @@
 
   async function getActiveTab() {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    return tabs[0];
+    const tab = tabs[0];
+    _siteExportSupported = !!(tab && /^https?:/i.test(String(tab.url || "")));
+    return tab;
   }
 
   const CONTENT_SCRIPT_FILES = [
@@ -390,9 +393,15 @@
     _lastItems = items || [];
     const c = document.getElementById("annotations");
     c.innerHTML = "";
+    // 整站导出只取决于当前页面是否为 HTTP(S) 以及团队会话是否已恢复，不能依赖
+    // isLocal（它也包含 localhost）或当前页面恰好有评论。
+    const _exportBtn = document.getElementById("export-btn");
+    const _siteExportBtn = document.getElementById("site-export-btn");
+    if (_siteExportBtn) _siteExportBtn.hidden = !_siteExportSupported || !_sessionUser;
     if (!items || items.length === 0) {
       c.innerHTML = '<div class="empty">' + esc(t("comment.empty")) + '</div>';
       updateCommentCount(0);
+      if (_exportBtn) _exportBtn.disabled = true;
       return;
     }
     // 「看过别人的评论」代理指标:渲染列表里出现带作者且非本人的评论,每面板会话只报一次。
@@ -480,10 +489,7 @@
     }
     updateCommentCount((byParent[null] || []).length);
     // v0.6.1:无未失效顶层批注时,底部「生成修改任务」disabled 且不打开空 Composer
-    const _exportBtn = document.getElementById("export-btn");
     if (_exportBtn) _exportBtn.disabled = !((byParent[null] || []).length > 0);
-    const _siteExportBtn = document.getElementById("site-export-btn");
-    if (_siteExportBtn) _siteExportBtn.hidden = !!isLocal || !_sessionUser;
   }
 
   // #2: 一键删除所有失效评论(原文已不在当前页面)
@@ -3000,15 +3006,17 @@
     if (_contractOpen && msg && msg.tab_id === currentTabId) handleBridgeEvent(msg);
   });
 
-  // 自动恢复登录：仅在用户勾选授权后才读取已有 session；Google 再额外尝试非交互 OAuth。
+  // 已有应用 session 属于当前设备上的持续登录状态，侧栏重开时必须始终恢复；
+  // 「自动登录」开关只控制是否额外尝试非交互 Google OAuth，不能阻止读取现有 session。
   async function silentReauth() {
     const local = await getLocalCfg(["auto_login_enabled"]);
-    if (local.auto_login_enabled !== true) return;
-    try {
-      const r = await Login.googleStart({ interactive: false });
-      if (r.token) { await applySession(r, false); HGAnalytics.track("session_restore", { method: "google" }); return; } // 静默重登不刷页(否则冲掉编辑确认窗)
-      if (r && r.teams && r.teams.length === 0) { _sessionUser = r.user || _sessionUser; setAccountFlow("join-or-create"); return; }
-    } catch (e) { /* 邮箱账号或 Google 会话失效时，继续检查已有应用 session */ }
+    if (local.auto_login_enabled === true) {
+      try {
+        const r = await Login.googleStart({ interactive: false });
+        if (r.token) { await applySession(r, false); HGAnalytics.track("session_restore", { method: "google" }); return; } // 静默重登不刷页(否则冲掉编辑确认窗)
+        if (r && r.teams && r.teams.length === 0) { _sessionUser = r.user || _sessionUser; setAccountFlow("join-or-create"); return; }
+      } catch (e) { /* Google 静默登录失败时，继续检查已有应用 session */ }
+    }
     const cfg = await getCfg(["mode", "session_token", "team_id", "team_name"]);
     if (cfg.mode === "synced" && cfg.session_token) {
       try {
