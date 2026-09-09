@@ -27,7 +27,9 @@ extension/fonts/cormorant-*.woff2
 
 # v0.9.9:docs/ 整体不再跟踪(审计报告/spec/计划/密钥等本地工作文档,只留本地;
 # 此前按文件名逐条忽略的方式作废,统一为整目录)
-docs/
+docs/*
+!docs/pagetack-local-test-guide/
+!docs/pagetack-local-test-guide/**
 
 # 官网小红书二维码原始截图素材(工作文件,真正用的是 extension/icons/feedback-qrcode.jpeg)
 landing/qrcode/

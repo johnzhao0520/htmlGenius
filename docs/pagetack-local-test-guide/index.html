@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>PageTack 1.0.11 本地测试包使用教程</title>
+  <style>
+    :root{--ink:#10242a;--muted:#526a70;--brand:#087f70;--brand2:#11a78f;--mint:#dff7ef;--line:#d7e7e1;--paper:#fff;--warm:#fff9e9;--danger:#fff1ed}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f1f7f5;color:var(--ink);font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif;line-height:1.75}
+    a{color:var(--brand);text-decoration:none}a:hover{text-decoration:underline}.shell{width:min(1120px,calc(100% - 32px));margin:auto}
+    .hero{position:relative;overflow:hidden;padding:72px 0 58px;background:linear-gradient(135deg,#0b2529 0%,#113d3c 64%,#087f70 100%);color:#fff}.hero:after{content:"";position:absolute;width:520px;height:520px;right:-120px;top:-220px;border:1px solid rgba(255,255,255,.14);border-radius:50%;box-shadow:0 0 0 80px rgba(255,255,255,.04),0 0 0 160px rgba(255,255,255,.025)}
+    .brand{display:flex;align-items:center;gap:12px;position:relative;z-index:1;font-weight:800}.mark{width:42px;height:42px;border-radius:13px;background:#72e3c7;color:#0b2529;display:grid;place-items:center;font-size:22px;box-shadow:0 10px 32px #071d1f66}.version{padding:4px 10px;border:1px solid #ffffff40;border-radius:999px;font-size:12px;font-weight:700;color:#d8fff4}
+    h1{position:relative;z-index:1;max-width:830px;margin:38px 0 18px;font:500 clamp(42px,6vw,72px)/1.05 Georgia,"Noto Serif SC",serif;letter-spacing:-.035em}.hero p{position:relative;z-index:1;max-width:710px;margin:0;color:#d7e9e5;font-size:18px}.hero-actions{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 18px;border-radius:10px;background:#72e3c7;color:#0b2529;font-weight:800}.button.ghost{background:transparent;color:#fff;border:1px solid #ffffff55}
+    main{padding:38px 0 80px}.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:-3px 0 44px}.quick a{padding:18px;background:var(--paper);border:1px solid var(--line);border-radius:16px;color:var(--ink);font-weight:750;box-shadow:0 8px 25px #19473d0a}.quick small{display:block;color:var(--muted);font-weight:500;margin-top:3px}
+    section{scroll-margin-top:24px;margin:28px 0;padding:clamp(22px,4vw,42px);background:var(--paper);border:1px solid var(--line);border-radius:24px;box-shadow:0 12px 40px #173c3509}.head{display:flex;align-items:flex-start;gap:18px;margin-bottom:22px}.num{flex:0 0 44px;height:44px;border-radius:13px;background:var(--mint);display:grid;place-items:center;color:var(--brand);font-weight:900}.head h2{margin:0;font-size:26px;line-height:1.25}.head p{margin:6px 0 0;color:var(--muted)}
+    ol,ul{padding-left:1.35em}.shot{margin:24px 0 0;padding:10px;background:#e8f1ee;border-radius:18px}.shot img{display:block;width:100%;height:auto;border-radius:11px;background:#fff}.shot.narrow{max-width:500px;margin-left:auto;margin-right:auto}.shot figcaption{text-align:center;padding:10px 8px 2px;color:var(--muted);font-size:14px}
+    code{padding:.18em .45em;border-radius:6px;background:#edf4f2;color:#0a6f62;font-family:"SFMono-Regular",Consolas,monospace;font-size:.92em}.callout{margin:20px 0 0;padding:16px 18px;border-left:4px solid var(--brand2);border-radius:4px 12px 12px 4px;background:#effbf7}.callout.warn{border-color:#e5a51d;background:var(--warm)}.callout.problem{border-color:#ef6b4c;background:var(--danger)}
+    .levels{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:20px}.level{padding:17px;border:1px solid var(--line);border-radius:14px;background:#f8fbfa}.level b{display:block;color:var(--brand);margin-bottom:4px}.level p{margin:0;color:var(--muted);font-size:14px}.checks{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:0;list-style:none}.checks li{padding:13px 15px;border-radius:12px;background:#f4f8f7}.checks li:before{content:"✓";color:var(--brand);font-weight:900;margin-right:9px}
+    table{width:100%;border-collapse:collapse;margin-top:14px}th,td{text-align:left;vertical-align:top;padding:13px;border-bottom:1px solid var(--line)}th{width:30%;color:var(--brand)}footer{padding:24px 0 45px;color:var(--muted);text-align:center;font-size:14px}
+    @media(max-width:760px){.hero{padding-top:48px}.quick,.levels,.checks{grid-template-columns:1fr}.head{gap:12px}.num{flex-basis:38px;height:38px}.head h2{font-size:22px}section{border-radius:18px}table,tbody,tr,th,td{display:block}th{width:auto;border-bottom:0;padding-bottom:2px}td{padding-top:2px}}
+    @media print{body{background:#fff}.hero{padding:35px 0}.hero-actions,.quick{display:none}main{padding:10px 0}section{break-inside:avoid;box-shadow:none;margin:15px 0;padding:22px}.shot{break-inside:avoid}}
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="shell">
+      <div class="brand"><span class="mark">P</span>PageTack · 网页标注 <span class="version">v1.0.11</span></div>
+      <h1>本地测试包<br>图文使用教程</h1>
+      <p>从安装、网页评论到一键整理给 AI，全程约 3 分钟。下方截图均来自真实的 PageTack 1.0.11 测试包。</p>
+      <div class="hero-actions"><a class="button" href="#install">开始安装 →</a><a class="button ghost" href="#trouble">遇到问题？</a></div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <nav class="quick" aria-label="教程目录">
+      <a href="#install">01 安装测试包<small>Chrome 开发者模式</small></a>
+      <a href="#comment">02 添加评论<small>选中文字并标注</small></a>
+      <a href="#ai">03 交给 AI<small>批量生成修改提示词</small></a>
+      <a href="#update">04 更新与排错<small>缓存、无痕与权限</small></a>
+    </nav>
+
+    <section id="prepare">
+      <div class="head"><span class="num">0</span><div><h2>先准备正确的压缩包</h2><p>测试包文件名应以 <code>-local-test.zip</code> 结尾。</p></div></div>
+      <ul class="checks">
+        <li>macOS：双击 ZIP 自动解压</li><li>Windows：右键选择“全部解压”</li>
+        <li>保留解压后的整个文件夹</li><li>文件夹内应直接看到 <code>manifest.json</code></li>
+      </ul>
+      <div class="callout warn"><strong>不要直接选择 ZIP，也不要用商店上传包。</strong>请选择解压后的 <code>PageTack-1.0.11-local-test</code> 文件夹；商店包不带固定开发 ID，反复加载可能产生多个扩展副本。</div>
+    </section>
+
+    <section id="install">
+      <div class="head"><span class="num">1</span><div><h2>在 Chrome 加载扩展</h2><p>只需安装一次，之后更新可以直接重载。</p></div></div>
+      <ol>
+        <li>在地址栏输入 <code>chrome://extensions/</code> 并回车。</li>
+        <li>打开右上角的<strong>开发者模式</strong>。</li>
+        <li>点击左上角<strong>加载已解压的扩展程序</strong>。</li>
+        <li>选择刚才解压、且里面直接包含 <code>manifest.json</code> 的文件夹。</li>
+        <li>看到 “PageTack – Web Annotation 1.0.11” 且开关为蓝色，即安装成功。</li>
+      </ol>
+      <figure class="shot"><img src="images/01-load-unpacked.png" alt="Chrome 扩展程序页面已开启开发者模式，并显示 PageTack 1.0.11"><figcaption>确认卡片版本为 1.0.11；圆形箭头是“重新加载”按钮。</figcaption></figure>
+      <div class="callout">建议点击 Chrome 右上角拼图图标，将 PageTack 固定到工具栏。打开要检查的网站后，点击 PageTack 图标即可打开右侧栏。</div>
+    </section>
+
+    <section id="comment">
+      <div class="head"><span class="num">2</span><div><h2>选择网页文字并添加评论</h2><p>评论会和选中的原文绑定，不用再截图圈位置。</p></div></div>
+      <ol>
+        <li>打开任意普通网页，并保持 PageTack 侧栏开启。</li>
+        <li>按住鼠标，从文字开头拖到结尾；正向或反向选择都可以。</li>
+        <li>松开鼠标后，点击选区附近出现的黑色 <strong>Comment</strong> 按钮。</li>
+      </ol>
+      <figure class="shot"><img src="images/02-select-and-comment.png" alt="网页标题被选中，选区上方出现 Comment 按钮"><figcaption>蓝色高亮保持时点击 Comment。</figcaption></figure>
+      <p>右侧栏会出现一张 “New comment” 卡片。输入希望修改的内容，然后点击 <strong>Save</strong>。</p>
+      <figure class="shot narrow"><img src="images/03-write-comment.png" alt="PageTack 侧栏的新评论输入框"><figcaption>上方灰色区域是原文，下方输入具体修改意见。</figcaption></figure>
+      <div class="callout"><strong>推荐写法：</strong>“把标题改得更具体，并强调转化结果。” 比 “这里不好” 更容易让设计师或 AI 准确执行。</div>
+    </section>
+
+    <section id="review">
+      <div class="head"><span class="num">3</span><div><h2>查看与管理评论</h2><p>所有已保存的评论都会显示在 Comments 标签中。</p></div></div>
+      <p>评论卡片会同时显示选中的原文、作者和修改意见。继续在页面上选择其他文字，就能逐条补充；无需每写一条就刷新网页。</p>
+      <figure class="shot narrow"><img src="images/04-comment-inbox.png" alt="PageTack 评论列表显示一条已保存评论"><figcaption>Comments 旁的数字是当前评论数量。</figcaption></figure>
+      <div class="callout warn"><strong>本地与团队的区别：</strong>未登录时，评论只保存在当前浏览器；登录并加入团队后，团队评论会同步到服务器，其他成员在同一网站也能看到。</div>
+    </section>
+
+    <section id="ai">
+      <div class="head"><span class="num">4</span><div><h2>批量整理评论，交给 AI 修改</h2><p>点击侧栏底部的 “Revise document from comments”。</p></div></div>
+      <div class="levels">
+        <div class="level"><b>Precise: only the selection</b><p>只改评论指向的内容，其他部分保持不动。日常修订首选。</p></div>
+        <div class="level"><b>Local: optimize this block</b><p>允许调整附近内容，使当前区块更完整。</p></div>
+        <div class="level"><b>Whole page: redo</b><p>按全部意见重做整页，其他部分也可能变化。</p></div>
+      </div>
+      <figure class="shot narrow"><img src="images/05-revise-with-ai.png" alt="PageTack 的 AI 修改级别选择页面"><figcaption>选择修改范围后，可 Copy prompt，或直接 Send to Codex。</figcaption></figure>
+      <ol>
+        <li>选择修改级别，并勾选真正需要执行的评论。</li>
+        <li>有整站通用要求时，在 Advanced 中填写 Global prompt；绝不能变化的内容填入 “Anything that must not change?”。</li>
+        <li>点击 <strong>Copy prompt</strong>，粘贴到任意 AI；或在已配置本机 Agent 时使用 <strong>Send to Codex</strong>。</li>
+      </ol>
+      <div class="callout"><strong>整站团队评论：</strong>登录团队后，PageTack 可以按当前网站域名从服务器读取未解决评论，再统一复制给 AI。未登录的本地评论只存在当前浏览器，后端无法直接读取。</div>
+    </section>
+
+    <section id="update">
+      <div class="head"><span class="num">5</span><div><h2>以后收到新版测试包，如何更新</h2><p>通常不需要频繁刷新网页。</p></div></div>
+      <ol>
+        <li>解压新版 <code>PageTack-x.x.x-local-test.zip</code>。</li>
+        <li>打开 <code>chrome://extensions/</code>，找到 PageTack。</li>
+        <li>若仍使用原文件夹：替换文件后点卡片右下角<strong>圆形箭头</strong>；若使用新文件夹：移除旧测试扩展，再加载新文件夹。</li>
+        <li>关闭并重新打开 PageTack 侧栏。1.0.11 会自动接管已经打开网页里的旧脚本，多数情况下不需要刷新网页。</li>
+      </ol>
+      <div class="callout problem">如果卡片显示的版本不是最新版，说明选错了解压目录，或浏览器仍加载着旧副本。先移除重复的 PageTack 测试扩展，再只加载一个正确文件夹。</div>
+    </section>
+
+    <section id="trouble">
+      <div class="head"><span class="num">?</span><div><h2>常见问题</h2><p>先按下表排查，通常一分钟内能解决。</p></div></div>
+      <table>
+        <tr><th>没有出现 Comment</th><td>确认选区仍是蓝色；页面不能是 <code>chrome://</code>、Chrome 商店等浏览器受限页面。重新打开侧栏后再选择一次。</td></tr>
+        <tr><th>提示 Select text first</th><td>先在网页正文中拖选文字，松开后直接点选区旁的 Comment，不要先点击侧栏导致选区消失。</td></tr>
+        <tr><th>本地 HTML 不工作</th><td>进入扩展“详情”，开启<strong>允许访问文件网址</strong>；也可以用 <code>http://127.0.0.1</code> 本地服务器打开网页。</td></tr>
+        <tr><th>无痕模式不工作</th><td>进入扩展“详情”，开启<strong>在无痕模式下启用</strong>。Chrome 默认关闭此权限；无痕窗口的会话也可能需要重新登录。</td></tr>
+        <tr><th>新版行为没有生效</th><td>在扩展卡片点圆形箭头并重新打开侧栏；仍不生效时再对目标网页强制刷新一次。正常使用不需要反复刷新。</td></tr>
+        <tr><th>评论换电脑后不见了</th><td>未登录评论属于浏览器本地数据。需要跨设备或团队共享时，请登录并加入同一个团队。</td></tr>
+      </table>
+    </section>
+  </main>
+  <footer><div class="shell">PageTack 1.0.11 本地测试教程 · 可直接打印或另存为 PDF</div></footer>
+</body>
+</html>
