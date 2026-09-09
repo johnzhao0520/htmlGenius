@@ -3,6 +3,10 @@
   "use strict";
 
   const t = (k) => (window.HG_I18N ? window.HG_I18N.t(k) : k);
+  const PANEL_EXTENSION_VERSION = (() => {
+    try { return chrome.runtime.getManifest().version || ""; }
+    catch (e) { return ""; }
+  })();
 
   let isLocal = false;
   let currentTabId = null;
@@ -68,6 +72,25 @@
     })();
     _contentRecoveryByTab.set(tab.id, recovery);
     return recovery;
+  }
+
+  async function refreshStaleContentScript(tab, showDialog) {
+    if (!tab || !tab.id || !canInjectInto(tab) || !chrome.scripting || !chrome.scripting.executeScript) return false;
+    try {
+      const probe = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => ({
+          version: String(window.__hgContentVersion || ""),
+          ready: !!(window.__hgContentInstance && window.describe && window.anchor && window.Storage && window.HG_I18N && window.HG_CONFIG),
+        }),
+      });
+      const state = probe && probe[0] && probe[0].result;
+      if (state && state.ready && state.version === PANEL_EXTENSION_VERSION) return false;
+      // 没有版本标记的旧脚本、版本不同的脚本、或只加载了一半的依赖都在这里自动接管。
+      return await recoverContentScript(tab, showDialog);
+    } catch (e) {
+      return false; // file:// 未授权或受限页面，继续走原有重试/提示流程。
+    }
   }
 
   async function sendToContent(msg) {
@@ -136,8 +159,11 @@
     const oldPort = _panelPort;
     // file:// 页的 content script 往往比 tab 的 complete 事件更晚就绪。过去只发一次 activate，
     // 这段短暂竞态会把页面永久留在“未激活”状态，选区自然不会显示评论工具栏。
-    let csReady = false;
+    // 扩展升级后，已打开网页中的旧 content script 不会被 Chrome 自动替换。先做版本握手，
+    // 发现旧版就主动重注入并接管，用户无需为了每次升级手工刷新所有网页。
+    let csReady = await refreshStaleContentScript(tab, showDialog);
     for (const wait of ACTIVATION_RETRY_DELAYS) {
+      if (csReady) break;
       if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
       try {
         const active = await getActiveTab();

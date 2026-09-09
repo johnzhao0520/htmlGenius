@@ -12,6 +12,10 @@
   } catch (e) {}
   const _contentInstance = { alive: true, dispose: null };
   window.__hgContentInstance = _contentInstance;
+  // Side Panel 用这个标记识别“扩展已升级，但当前标签仍运行旧 content script”。
+  // Chrome 重新加载扩展不会自动替换已打开网页中的脚本，因此必须由新版侧栏主动握手并接管。
+  try { window.__hgContentVersion = chrome.runtime.getManifest().version || ""; }
+  catch (e) { window.__hgContentVersion = ""; }
   const isCurrentInstance = () => _contentInstance.alive && window.__hgContentInstance === _contentInstance;
 
   const { describe, anchor } = window;

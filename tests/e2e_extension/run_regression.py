@@ -223,6 +223,32 @@ def run_phase(tag, http_url, do_edit_and_contract=True):
                     sp.locator("#draft-host .draft-cancel").click(force=True)
                 blocked_page.close(); blocked_page = None
 
+            # Chrome “重新加载扩展”不会自动替换已打开页面中的旧 content script。
+            # 模拟页面仍留着旧版本标记；侧栏重开后应主动发现并注入当前版本，无需刷新网页。
+            if ok_http:
+                page.bring_to_front(); time.sleep(0.2)
+                stale_set = sp.evaluate("""async () => {
+                    const tab = (await chrome.tabs.query({active:true, currentWindow:true}))[0];
+                    const out = await chrome.scripting.executeScript({
+                        target: {tabId: tab.id}, func: () => { window.__hgContentVersion = '0.0.0'; return true; }
+                    });
+                    return !!(out && out[0] && out[0].result);
+                }""")
+                sp.reload(); sp.wait_for_timeout(900)
+                handshake = sp.evaluate("""async () => {
+                    const expected = chrome.runtime.getManifest().version;
+                    const tab = (await chrome.tabs.query({active:true, currentWindow:true}))[0];
+                    const out = await chrome.scripting.executeScript({
+                        target: {tabId: tab.id}, func: () => String(window.__hgContentVersion || '')
+                    });
+                    return {expected, actual: out && out[0] && out[0].result};
+                }""")
+                report(
+                    f"[{tag}] 扩展升级后旧页面脚本自动接管",
+                    stale_set and handshake.get("actual") == handshake.get("expected"),
+                    json.dumps(handshake, ensure_ascii=False),
+                )
+
             # 用户没有开启 Google 自动登录时，只要现有 PageTack session 仍有效，侧栏也应恢复
             # 团队身份并显示“复制全站评论给 AI”。此前 early return 会把按钮永久隐藏。
             sp.evaluate("""async () => new Promise(resolve => {
