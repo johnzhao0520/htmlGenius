@@ -21,7 +21,8 @@ from playwright.sync_api import sync_playwright
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 EXT = ROOT / "extension"
 PROFILE = pathlib.Path("/tmp/hg-e2e-profile")
-FILE_TARGET = (ROOT / "docs" / "script-team-demo-2026-08-19.html").resolve()
+# 使用仓库长期保留的样例，避免历史演示文件被清理后整套 E2E 无法运行。
+FILE_TARGET = (ROOT / "samples" / "01_token.html").resolve()
 RESULTS = []
 
 
@@ -119,7 +120,7 @@ def run_phase(tag, http_url, do_edit_and_contract=True):
             print(f"   [watchdog] {tag} 超时,强杀浏览器", flush=True)
             _sp.run(["pkill", "-9", "-f", "hg-e2e-profile"])
         wd = threading.Timer(180, _watchdog); wd.daemon = True; wd.start()
-        sp = page = fpage = None
+        sp = page = fpage = blocked_page = None
         try:
             # 扩展页(sidepanel 作为 tab)
             sp = ctx.new_page()
@@ -150,6 +151,16 @@ def run_phase(tag, http_url, do_edit_and_contract=True):
             report(f"[{tag}] http 注入+响应", ok_http and r.get("type") == "annotations-list",
                    f"cs={ok_http} resp={r.get('type') or r.get('err')}")
 
+            # 顶部选区上方空间不足时，工具栏应自动放到下方，不能跑出视口。
+            if ok_http:
+                via_active_tab(sp, {"type": "activate", "showDialog": False})
+                select_text(page, "#p-top", 0, 10)
+                time.sleep(0.4)
+                top_box = page.locator('#hg-toolbar.show').bounding_box()
+                top_in_view = bool(top_box and top_box['y'] >= 0
+                                   and top_box['y'] + top_box['height'] <= page.viewport_size['height'])
+                report(f"[{tag}] 顶部选区 Comment 工具栏不越界", top_in_view, f"box={top_box}")
+
             # --- D 评论流 ---
             # 以扩展页模拟 Side Panel 时，重点验证用户可见链路：选区浮窗 → 点击评论 → 草稿框出现。
             # 提交落库另由服务器/UI 测试覆盖；这里不要再依赖“活动 tab”这一与真实 Side Panel 不同的测试环境细节。
@@ -176,6 +187,27 @@ def run_phase(tag, http_url, do_edit_and_contract=True):
                     time.sleep(1.0)
                 # 回到编辑页，避免草稿卡让后续编辑流的按钮处于隐藏 tab。
                 sp.locator("#tab-edit").click()
+
+                # 一些网站会在扩展注入前注册 selectionchange 监听并 stopImmediatePropagation。
+                # 用户仍看得到蓝色原生选区，但 PageTack 的选区缓存可能还没有建立。
+                # 侧栏 Comment 必须优先使用当前实时选区，不得因缓存缺失误报 NO_SELECTION。
+                blocked_page = ctx.new_page()
+                blocked_page.goto(http_url + "?block-selectionchange=1")
+                blocked_page.wait_for_timeout(1600)
+                blocked_page.bring_to_front(); time.sleep(0.3)
+                via_active_tab(sp, {"type": "activate", "showDialog": False})
+                select_text(blocked_page, "#p1", 0, 12)
+                time.sleep(0.2)
+                live_selection = blocked_page.evaluate("getSelection().toString()")
+                direct = via_active_tab(sp, {"type": "create-comment"})
+                time.sleep(0.8)
+                direct_draft = sp.locator("#draft-host .draft-card").count() == 1
+                report(f"[{tag}] 选区事件被网页拦截时侧栏评论仍可用",
+                       bool(live_selection) and direct.get("ok") is True and direct_draft,
+                       f"selection={live_selection!r} response={direct} draft={direct_draft}")
+                if direct.get("ok") is True and direct_draft:
+                    sp.locator("#draft-host .draft-cancel").click(force=True)
+                blocked_page.close(); blocked_page = None
 
             # --- B/C file:// 注入(用户症状页) ---
             # 模拟已登录团队账号：file:// 仍必须强制走本地评论，不发 RemoteStore/SSE。

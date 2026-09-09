@@ -1,7 +1,17 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><title>hg-e2e fixture</title></head>
-<body>
+<head>
+  <meta charset="utf-8"><title>hg-e2e fixture</title>
+  <script>
+    // 模拟会拦截 selectionchange 的真实网站。这类页面上的原生蓝色选区仍存在，
+    // 但后注入的扩展监听器收不到事件，用来回归侧栏 Comment 应读取实时选区。
+    if (new URLSearchParams(location.search).has("block-selectionchange")) {
+      document.addEventListener("selectionchange", (event) => event.stopImmediatePropagation(), true);
+    }
+  </script>
+</head>
+<body style="margin:0">
+  <p id="p-top" style="margin:0">Top edge selection keeps the PageTack Comment toolbar inside the visible viewport.</p>
   <h1>htmlGenius E2E 回归夹具页</h1>
   <p id="p1">这是第一段可以被圈选评论的文字,用于验证选区工具栏与评论创建流程。</p>
   <p id="p2">Second paragraph with plain text for bold and color editing regression checks.</p>

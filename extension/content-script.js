@@ -1011,9 +1011,12 @@
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) { toolbar.classList.remove("show"); closeAllPopovers(); return; }
       const rect = sel.getRangeAt(0).getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) { toolbar.classList.remove("show"); return; }
-      toolbar.style.left = (rect.left + rect.width / 2) + "px";
-      toolbar.style.top = (rect.top - 8) + "px";
-      toolbar.style.transform = "translate(-50%,-100%)";
+      toolbar.style.left = Math.max(12, Math.min(window.innerWidth - 12, rect.left + rect.width / 2)) + "px";
+      // 选区贴近视口顶部时，放在上方会让 Comment 完全跑出屏幕。
+      // 此时改放到选区下方，保证页面入口与侧栏入口都始终可见。
+      const placeBelow = rect.top < 56;
+      toolbar.style.top = (placeBelow ? rect.bottom + 8 : rect.top - 8) + "px";
+      toolbar.style.transform = placeBelow ? "translate(-50%,0)" : "translate(-50%,-100%)";
       toolbar.classList.add("show");
       syncActiveStates(); // #1: 选区变化时刷新 B/I/U/S 高亮
     });
@@ -1072,6 +1075,9 @@
     _pendingCommentRequest = request;
     deliverPendingComment();
     if (sel) sel.removeAllRanges();
+    // 本次评论已经消费该选区，不应在用户没有重新圈选时继续复用，
+    // 否则连点侧栏 Comment 会对同一段重复建草稿。
+    _lastRange = null;
     return { ok: true };
   }
 
@@ -1260,12 +1266,25 @@
     if (!op || !op.kind) return { ok: false, code: "BAD_OP" };
     if (op.kind !== "comment" && !_editing) return { ok: false, code: "NOT_EDITING" };
     if (op.restore) {
-      const r = op.restore === "cursor" ? (_lastCursor || _lastRange) : _lastRange;
-      // #1: 侧边栏入口的 stale 防护 —— 缓存选区已失效时施色只会「施到幽灵节点上」
-      // (页面毫无变化,像按钮失灵);此时明确报 NO_SELECTION 让侧边栏提示先选文字。
-      if (!r || !rangeInDocument(r)) return { ok: false, code: "NO_SELECTION" };
       const sel = document.getSelection();
-      sel.removeAllRanges(); sel.addRange(r);
+      const live = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+      const liveUsable = !!(live && rangeInDocument(live)
+        && (op.restore === "cursor" || !live.collapsed));
+      // 侧栏按钮不在网页 document 内，Chrome 通常会保留网页的实时选区。
+      // 优先使用这个选区：某些站点会拦截 selectionchange，此时用户看得到
+      // 蓝色选区，但 _lastRange 还未建立。1.0.7 会在这里误报 NO_SELECTION。
+      if (liveUsable) {
+        if (!live.collapsed) _lastRange = live.cloneRange();
+        if (_editing || op.restore === "cursor") _lastCursor = live.cloneRange();
+      } else {
+        const cached = op.restore === "cursor" ? (_lastCursor || _lastRange) : _lastRange;
+        // 实时选区与缓存都不可用时才给出明确提示，同时保留 stale 防护。
+        if (!cached || !rangeInDocument(cached)
+          || (op.restore !== "cursor" && cached.collapsed)) {
+          return { ok: false, code: "NO_SELECTION" };
+        }
+        sel.removeAllRanges(); sel.addRange(cached);
+      }
     }
     const TOGGLE = { bold: "bold", italic: "italic", underline: "underline", strike: "strikeThrough" };
     switch (op.kind) {
@@ -1425,7 +1444,7 @@
     return fromTitle || "htmlgenius-page";
   }
   // #3b/v0.6: _lastRange=非折叠选区(取色);_lastCursor=任意位(emoji 插入)。分开存,避免光标覆盖取色选区。
-  document.addEventListener("selectionchange", () => {
+  function rememberCurrentSelection() {
     if (!isCurrentInstance()) return;
     const sel = document.getSelection();
     if (!sel || !sel.rangeCount) return;
@@ -1433,7 +1452,14 @@
     // 评论在查看模式也可用，因此非折叠选区始终缓存；光标与文字编辑相关，只在编辑态缓存。
     if (sel.isCollapsed) { if (_editing) _lastCursor = r; }
     else { _lastRange = r; if (_editing) _lastCursor = r; }
-  });
+  }
+  document.addEventListener("selectionchange", rememberCurrentSelection);
+  // 真实网站可能拦截 selectionchange。在用户完成鼠标/触摸/键盘选区后再主动读一次，
+  // 即使事件链不完整也能为之后的侧栏操作保留选区。实时读取仍是最后一层保障。
+  const rememberAfterSelectionGesture = () => setTimeout(rememberCurrentSelection, 0);
+  window.addEventListener("mouseup", rememberAfterSelectionGesture, true);
+  window.addEventListener("touchend", rememberAfterSelectionGesture, true);
+  window.addEventListener("keyup", rememberAfterSelectionGesture, true);
 
   // 撤销 + 粘贴:本地/远程均可编辑 → 全局注册(仅 _editing 时拦截,免得抢页面原生快捷键);版本持久化仅本地。
   document.addEventListener("keydown", (e) => {
