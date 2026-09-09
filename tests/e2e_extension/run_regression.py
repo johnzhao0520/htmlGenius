@@ -66,6 +66,64 @@ def select_text(page, selector, start=0, length=12):
         }""", [selector, start, length])
 
 
+def drag_select_text(page, selector, reverse=False):
+    """用真实鼠标跨行拖选，覆盖正向/反向手势及浏览器事件时序。"""
+    points = page.evaluate(
+        """(selector) => {
+            const el = document.querySelector(selector);
+            const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+            const nodes = [];
+            while (walker.nextNode()) {
+                if (walker.currentNode.data.trim()) nodes.push(walker.currentNode);
+            }
+            if (!nodes.length) throw new Error('no text node: ' + selector);
+            const first = nodes[0];
+            const last = nodes[nodes.length - 1];
+            const firstOffset = Math.max(0, first.data.search(/\S/));
+            const lastOffset = Math.max(0, last.data.search(/\s*$/) - 1);
+            const a = document.createRange();
+            a.setStart(first, firstOffset); a.setEnd(first, firstOffset + 1);
+            const b = document.createRange();
+            b.setStart(last, lastOffset); b.setEnd(last, lastOffset + 1);
+            const ar = a.getBoundingClientRect(); const br = b.getBoundingClientRect();
+            return {
+                start: {x: ar.left + 2, y: ar.top + ar.height / 2},
+                end: {x: br.right - 2, y: br.top + br.height / 2},
+            };
+        }""", selector)
+    page.evaluate("getSelection().removeAllRanges()")
+    start, end = points["start"], points["end"]
+    if reverse:
+        start, end = end, start
+    page.mouse.move(start["x"], start["y"])
+    page.mouse.down()
+    page.mouse.move(end["x"], end["y"], steps=3)
+    page.mouse.up()
+    page.wait_for_timeout(350)
+    return page.evaluate("getSelection().toString()")
+
+
+def select_then_finish_pointer_gesture(page, selector):
+    """确定性建立选区，再模拟用户松手；用于隔离测试 selectionchange 被拦截的兜底。"""
+    page.evaluate(
+        """(selector) => {
+            const el = document.querySelector(selector);
+            const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+            const nodes = [];
+            while (walker.nextNode()) if (walker.currentNode.data.trim()) nodes.push(walker.currentNode);
+            const first = nodes[0], last = nodes[nodes.length - 1];
+            const start = Math.max(0, first.data.search(/\S/));
+            const end = last.data.search(/\s*$/);
+            const range = document.createRange();
+            range.setStart(first, start); range.setEnd(last, end);
+            const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+            el.dispatchEvent(new PointerEvent('pointerup', {bubbles: true, cancelable: true}));
+            el.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
+        }""", selector)
+    page.wait_for_timeout(350)
+    return page.evaluate("getSelection().toString()")
+
+
 def cs_marker_seen(page):
     return any("[hg] cs loaded" in m.text for m in page.console_messages())
 
@@ -79,6 +137,18 @@ def via_active_tab(sp, msg):
             try { return await chrome.tabs.sendMessage(tabs[0].id, msg); }
             catch (e) { return {err: String(e && e.message || e)}; }
         }""", msg)
+
+
+def via_tab_url(sp, url, msg):
+    """向指定 URL 的 tab 发消息，避免 headed E2E 的窗口焦点抖动误选其他页。"""
+    return sp.evaluate(
+        """async ([url, msg]) => {
+            const tabs = await chrome.tabs.query({});
+            const tab = tabs.find((t) => t.url === url);
+            if (!tab) return {err: 'tab not found'};
+            try { return await chrome.tabs.sendMessage(tab.id, msg); }
+            catch (e) { return {err: String(e && e.message || e)}; }
+        }""", [url, msg])
 
 
 def enable_file_access_pref(ext_id):
@@ -175,6 +245,20 @@ def run_phase(tag, http_url, do_edit_and_contract=True):
                                    and top_box['y'] + top_box['height'] <= page.viewport_size['height'])
                 report(f"[{tag}] 顶部选区 Comment 工具栏不越界", top_in_view, f"box={top_box}")
 
+                # 用户真实问题发生在跨行大标题：快速正向拖选偶尔只有原生蓝色选区，
+                # 反向拖选或先双击一个词后才出现 Comment。两种方向都必须独立稳定。
+                for direction, reverse in (("正向", False), ("反向", True)):
+                    attempts = []
+                    for _ in range(6):
+                        selected = drag_select_text(page, "#hero-title", reverse=reverse)
+                        toolbar_visible = page.locator('#hg-toolbar.show button[data-act="comment"]').count() == 1
+                        attempts.append(len(selected.strip()) >= 20 and toolbar_visible)
+                    report(
+                        f"[{tag}] 跨行标题{direction}拖选稳定显示 Comment",
+                        all(attempts),
+                        f"success={sum(attempts)}/{len(attempts)} selection={selected.strip()!r}",
+                    )
+
             # --- D 评论流 ---
             # 以扩展页模拟 Side Panel 时，重点验证用户可见链路：选区浮窗 → 点击评论 → 草稿框出现。
             # 提交落库另由服务器/UI 测试覆盖；这里不要再依赖“活动 tab”这一与真实 Side Panel 不同的测试环境细节。
@@ -199,6 +283,10 @@ def run_phase(tag, http_url, do_edit_and_contract=True):
                     sp.locator(".draft-input").fill("E2E 回归评论:这段要改")
                     sp.locator(".draft-save").click()
                     time.sleep(1.0)
+                    # 假 session 无法在线落库时草稿会按产品设计保留；先清掉它，避免下一条
+                    # 断言把旧草稿误认成刚创建的新草稿。
+                    if sp.locator("#draft-host .draft-card").count() == 1:
+                        sp.locator("#draft-host .draft-cancel").click(force=True)
                 # 回到编辑页，避免草稿卡让后续编辑流的按钮处于隐藏 tab。
                 sp.locator("#tab-edit").click()
 
@@ -210,10 +298,15 @@ def run_phase(tag, http_url, do_edit_and_contract=True):
                 blocked_page.wait_for_timeout(1600)
                 blocked_page.bring_to_front(); time.sleep(0.3)
                 via_active_tab(sp, {"type": "activate", "showDialog": False})
-                select_text(blocked_page, "#p1", 0, 12)
-                time.sleep(0.2)
+                live_selection = select_then_finish_pointer_gesture(blocked_page, "#hero-title")
+                blocked_toolbar = blocked_page.locator('#hg-toolbar.show button[data-act="comment"]').count() == 1
+                report(
+                    f"[{tag}] 网页拦截 selectionchange 后松开鼠标仍显示 Comment",
+                    len(live_selection.strip()) >= 20 and blocked_toolbar,
+                    f"selection={live_selection.strip()!r} toolbar={blocked_toolbar}",
+                )
                 live_selection = blocked_page.evaluate("getSelection().toString()")
-                direct = via_active_tab(sp, {"type": "create-comment"})
+                direct = via_tab_url(sp, blocked_page.url, {"type": "create-comment"})
                 time.sleep(0.8)
                 direct_draft = sp.locator("#draft-host .draft-card").count() == 1
                 report(f"[{tag}] 选区事件被网页拦截时侧栏评论仍可用",

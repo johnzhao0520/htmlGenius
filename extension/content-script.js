@@ -994,37 +994,42 @@
 
   // === selectionchange → toolbar 定位(rAF 防抖) ===
   let barRAF = 0;
-  document.addEventListener("selectionchange", () => {
+  function updateSelectionToolbar() {
+    barRAF = 0;
     if (!isCurrentInstance()) return;
-    if (barRAF) return;
-    barRAF = requestAnimationFrame(() => {
-      barRAF = 0;
-      if (!_activated && !_editing) {
-        // 已与侧栏建立 port 却漏收 activate（扩展 reload / file:// 注入竞态）时，
-        // 用户主动选区就是明确的恢复信号：自愈为激活态，而不是静默吞掉评论入口。
-        // file:// 页在扩展重载后最容易留下旧 message listener；它可能先响应 activate，
-        // 让当前实例没有收到激活消息。对本地文件，用户明确框选文字就是评论意图，
-        // 因而允许它直接自愈激活，不再依赖那条不可靠的历史消息。
-        if (_panelConnected || isPrivateLocalDocument) {
-          _activated = true;
-          _lastPingAt = Date.now();
-          loadAnnotations();
-        } else { toolbar.classList.remove("show"); return; }
-      } // 未激活且未编辑:不弹工具栏(零打扰)。编辑中即使漏 ping 也保留工具栏。
-      const sel = document.getSelection();
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0) { toolbar.classList.remove("show"); closeAllPopovers(); return; }
-      const rect = sel.getRangeAt(0).getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) { toolbar.classList.remove("show"); return; }
-      toolbar.style.left = Math.max(12, Math.min(window.innerWidth - 12, rect.left + rect.width / 2)) + "px";
-      // 选区贴近视口顶部时，放在上方会让 Comment 完全跑出屏幕。
-      // 此时改放到选区下方，保证页面入口与侧栏入口都始终可见。
-      const placeBelow = rect.top < 56;
-      toolbar.style.top = (placeBelow ? rect.bottom + 8 : rect.top - 8) + "px";
-      toolbar.style.transform = placeBelow ? "translate(-50%,0)" : "translate(-50%,-100%)";
-      toolbar.classList.add("show");
-      syncActiveStates(); // #1: 选区变化时刷新 B/I/U/S 高亮
-    });
-  });
+    if (!_activated && !_editing) {
+      // 已与侧栏建立 port 却漏收 activate（扩展 reload / file:// 注入竞态）时，
+      // 用户主动选区就是明确的恢复信号：自愈为激活态，而不是静默吞掉评论入口。
+      // file:// 页在扩展重载后最容易留下旧 message listener；它可能先响应 activate，
+      // 让当前实例没有收到激活消息。对本地文件，用户明确框选文字就是评论意图，
+      // 因而允许它直接自愈激活，不再依赖那条不可靠的历史消息。
+      if (_panelConnected || isPrivateLocalDocument) {
+        _activated = true;
+        _lastPingAt = Date.now();
+        loadAnnotations();
+      } else { toolbar.classList.remove("show"); return; }
+    } // 未激活且未编辑:不弹工具栏(零打扰)。编辑中即使漏 ping 也保留工具栏。
+    const sel = document.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) { toolbar.classList.remove("show"); closeAllPopovers(); return; }
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) { toolbar.classList.remove("show"); return; }
+    toolbar.style.left = Math.max(12, Math.min(window.innerWidth - 12, rect.left + rect.width / 2)) + "px";
+    // 选区贴近视口顶部时，放在上方会让 Comment 完全跑出屏幕。
+    // 此时改放到选区下方，保证页面入口与侧栏入口都始终可见。
+    const placeBelow = rect.top < 56;
+    toolbar.style.top = (placeBelow ? rect.bottom + 8 : rect.top - 8) + "px";
+    toolbar.style.transform = placeBelow ? "translate(-50%,0)" : "translate(-50%,-100%)";
+    toolbar.classList.add("show");
+    syncActiveStates(); // #1: 选区变化时刷新 B/I/U/S 高亮
+  }
+  function scheduleSelectionToolbarUpdate() {
+    if (!isCurrentInstance()) return;
+    // 取“最后一次” selectionchange，而不是忽略同一帧内后到的事件。快速正向拖选时，
+    // 首个事件可能仍是折叠光标；旧实现会错过鼠标松开前形成的最终非折叠选区。
+    if (barRAF) cancelAnimationFrame(barRAF);
+    barRAF = requestAnimationFrame(updateSelectionToolbar);
+  }
+  document.addEventListener("selectionchange", scheduleSelectionToolbarUpdate);
 
   // === 批注创建 ===
   // v0.4.1: 不再用浏览器 prompt。捕获选区后通知 sidepanel 开草稿块内联编辑,
@@ -1460,7 +1465,13 @@
   document.addEventListener("selectionchange", rememberCurrentSelection);
   // 真实网站可能拦截 selectionchange。在用户完成鼠标/触摸/键盘选区后再主动读一次，
   // 即使事件链不完整也能为之后的侧栏操作保留选区。实时读取仍是最后一层保障。
-  const rememberAfterSelectionGesture = () => setTimeout(rememberCurrentSelection, 0);
+  const rememberAfterSelectionGesture = () => setTimeout(() => {
+    rememberCurrentSelection();
+    // selectionchange 可能被网页拦截或在拖动过程中被合并；鼠标/触摸/键盘动作结束后
+    // 必须再用最终选区刷新一次工具栏，保证正选、反选和双击选词行为一致。
+    scheduleSelectionToolbarUpdate();
+  }, 0);
+  window.addEventListener("pointerup", rememberAfterSelectionGesture, true);
   window.addEventListener("mouseup", rememberAfterSelectionGesture, true);
   window.addEventListener("touchend", rememberAfterSelectionGesture, true);
   window.addEventListener("keyup", rememberAfterSelectionGesture, true);
